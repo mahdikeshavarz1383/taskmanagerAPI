@@ -7,6 +7,7 @@ const dotenv=require("dotenv")
 const jwt=require("jsonwebtoken")
 const bcryptjs=require("bcryptjs")
 const SECRET="mahdi_secret_key";
+const AppError=require("./error");
 //@@@@@@@@@@@@@@@@@@@@@@@
 let Tasks=[];
 let tasks=[];
@@ -96,7 +97,15 @@ app.delete("/tasks/:id",verifyToken,async(req,res)=>{
   return res.json({message:"deleted"})
 
 })
- 
+ // end of program
+app.use((err, req, res, next) => {
+  const statusCode = err.statusCode || 500
+  const message = err.message || "Internal Server Error"
+  res.status(statusCode).json({
+    success: false,
+    message
+  })
+})
 
 
 
