@@ -1,103 +1,110 @@
-const express=require("express")
-const port=3000;
-const app=express();
-const Task=require("./taskModel")
-const User=require("./userModel")
-const dotenv=require("dotenv")
-const jwt=require("jsonwebtoken")
-const bcryptjs=require("bcryptjs")
-const SECRET="mahdi_secret_key";
-const AppError=require("./error");
-//@@@@@@@@@@@@@@@@@@@@@@@
-let Tasks=[];
-let tasks=[];
-app.use(express.json())
-// join to mongodb
+const express = require("express")
+const port = 3000
+const app = express()
+const Task = require("./taskModel")
+const User = require("./userModel")
+const jwt = require("jsonwebtoken")
+const bcryptjs = require("bcryptjs")
 const mongoose = require("mongoose")
+const AppError = require("./error")
 require("dotenv").config()
+
+const SECRET = "mahdi_secret_key"
+app.use(express.json())
+
+// MongoDB
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("Connected to MongoDB! ✅"))
   .catch((err) => console.log("Error:", err))
-  //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-app.post("/register",async(req,res)=>{
-    const{id,username,password}=req.body
-    if(!username ||!password){return res.status(400).json({message:"please fil up "})}
-     const hashedPassword=await bcryptjs.hash(password,10)
+
+// Register
+app.post("/register", async (req, res, next) => {
+  try {
+    const {username, password} = req.body
+    if(!username || !password) throw new AppError("please fill up", 400)
+    const hashedPassword = await bcryptjs.hash(password, 10)
     const newUser = new User({username, password: hashedPassword})
-  await newUser.save()
-    
-    return res.status(201).json({message:"seccsfully"})
+    await newUser.save()
+    res.status(201).json({message: "successfully"})
+  } catch(err) {
+    next(err)
+  }
 })
-//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-app.post("/login",async(req,res)=>{
-    const {username,password}=req.body
-    
+
+// Login
+app.post("/login", async (req, res, next) => {
+  try {
+    const {username, password} = req.body
     const user = await User.findOne({username})
-    if(!user){return res.status(400).json({message:"user not found"})}
-    const isMatch=await bcryptjs.compare(password,user.password)
-    if(!isMatch){return res.status(400).json({message:"password is wrong"})}
-     const token = jwt.sign({id: user._id, username: user.username}, SECRET, {expiresIn: "1h"})
-  res.json({message: "logged in", token})
+    if(!user) throw new AppError("user not found", 404)
+    const isMatch = await bcryptjs.compare(password, user.password)
+    if(!isMatch) throw new AppError("password is wrong", 400)
+    const token = jwt.sign({id: user._id, username: user.username}, SECRET, {expiresIn: "1h"})
+    res.json({message: "logged in", token})
+  } catch(err) {
+    next(err)
+  }
 })
-//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-  //Authuntication
+
+// Middleware
 const verifyToken = (req, res, next) => {
   const token = req.headers["authorization"]
-  if(!token) {
-    return res.status(401).json({message: "you dont have any token"})
-  }
-
+  if(!token) return next(new AppError("no token", 401))
   try {
     const decoded = jwt.verify(token, SECRET)
     req.user = decoded
     next()
   } catch(err) {
-    return res.status(401).json({message: "toke is not valid"})
+    next(new AppError("token is not valid", 401))
   }
 }
-app.post("/tasks",verifyToken,async(req,res)=>{
-  const {taskname,completed}=req.body
-  if(!taskname){return res.status(400).json({message:"you must enter taskname"})}
-  const newTask={
-        id:tasks.length+1,
-       taskname:req.body.name,
-        completed:req.body.completed,
-        user: req.user.id
-    }
-    const newTasks=new Task({title:taskname,completed,user:req.user.id})
-    await newTasks.save()
-    return res.status(201).json({message:"added",newTasks,user:req.user.id})
-})
-app.put("/tasks/:id",verifyToken,async(req,res)=>{
-    const id=parseInt(req.params.id)
-    if(isNaN(id)){return res.status(400).json({message:"please enter a number"})}
-     const task = await Task.findByIdAndUpdate(
-    req.params.id,
-    req.body,
-    {new: true}
-  )
-  if(!task){return res.status(404).json({message:"id not found"})}
-    const{taskname,completed} = req.body
 
-  if(!taskname){return res.json({message:"enter taskname"})}
-  
-  return res.json({message:"updated",task})
-})
-app.get("/tasks",verifyToken,async(req,res)=>{
-    const tasks = await Task.find({user:req.user.id})
-  return res.json({message: tasks})
+// GET tasks
+app.get("/tasks", verifyToken, async (req, res, next) => {
+  try {
+    const tasks = await Task.find({user: req.user.id})
+    res.json({tasks})
+  } catch(err) {
+    next(err)
+  }
 })
 
-app.delete("/tasks/:id",verifyToken,async(req,res)=>{
-  const id=parseInt(req.params.id)
-  if(isNaN(id)){return res.status(400).json({message:"please enter a number"})}
-  const task=await Task.findByIdAndDelete(req.params.id)
-  if(!task){return res.status(404).json({message:"not found"})}
-   
-  return res.json({message:"deleted"})
-
+// POST task
+app.post("/tasks", verifyToken, async (req, res, next) => {
+  try {
+    const {taskname, completed} = req.body
+    if(!taskname) throw new AppError("enter taskname", 400)
+    const newTask = new Task({title: taskname, completed, user: req.user.id})
+    await newTask.save()
+    res.status(201).json({message: "added", newTask})
+  } catch(err) {
+    next(err)
+  }
 })
- // end of program
+
+// PUT task
+app.put("/tasks/:id", verifyToken, async (req, res, next) => {
+  try {
+    const task = await Task.findByIdAndUpdate(req.params.id, req.body, {new: true})
+    if(!task) throw new AppError("task not found", 404)
+    res.json({message: "updated", task})
+  } catch(err) {
+    next(err)
+  }
+})
+
+// DELETE task
+app.delete("/tasks/:id", verifyToken, async (req, res, next) => {
+  try {
+    const task = await Task.findByIdAndDelete(req.params.id)
+    if(!task) throw new AppError("task not found", 404)
+    res.json({message: "deleted"})
+  } catch(err) {
+    next(err)
+  }
+})
+
+// Error Middleware — باید آخر باشه!
 app.use((err, req, res, next) => {
   const statusCode = err.statusCode || 500
   const message = err.message || "Internal Server Error"
@@ -107,8 +114,6 @@ app.use((err, req, res, next) => {
   })
 })
 
-
-
-app.listen(port,()=>{
-    console.log("the program is running on port:3000")
+app.listen(port, () => {
+  console.log("the program is running on port:3000")
 })
